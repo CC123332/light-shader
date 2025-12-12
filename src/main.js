@@ -11,7 +11,6 @@ renderer.setSize(container.clientWidth, container.clientHeight);
 renderer.setClearColor(0x000000, 1.0);
 container.appendChild(renderer.domElement);
 
-// ✅ 开启阴影
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -28,11 +27,9 @@ const camera = new THREE.PerspectiveCamera(
 camera.position.set(0, 1.5, 4);
 scene.add(camera);
 
-// 环境光
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0x202030, 0.5);
 scene.add(hemiLight);
 
-// ✅ 方向光（带阴影）
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
 dirLight.position.set(3, 5, 2);
 dirLight.castShadow = true;
@@ -47,7 +44,6 @@ dirLight.shadow.camera.bottom = -6;
 
 scene.add(dirLight);
 
-// 把场景具体内容交给 scene.js
 const sceneState = setupSceneContent({
   scene,
   camera,
@@ -55,7 +51,6 @@ const sceneState = setupSceneContent({
   lights: { dirLight, hemiLight }
 });
 
-// 动画循环
 let lastTime = performance.now();
 
 function animate(now) {
