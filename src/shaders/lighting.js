@@ -59,5 +59,3 @@ export const lightingFragmentShader = /* glsl */ `
     gl_FragColor = vec4(diffuse + vec3(spec), 1.0);
   }
 `;
-
-
