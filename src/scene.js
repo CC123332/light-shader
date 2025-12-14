@@ -34,7 +34,7 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   scene.add(floor);
 
 
-  function makeRedShadowMaterial() {
+  function makeDashedLineShadowMaterial() {
     const mat = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 1.0,
@@ -142,10 +142,106 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
     return mat;
   }
 
-    let fbxRoot = null;
-    let mixer = null;
+function makeDotShadowMaterial() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 1.0,
+    metalness: 0.0
+  });
 
-    const fbxLoader = new FBXLoader();
+  mat.onBeforeCompile = (shader) => {
+    const usesPCFragColor = shader.fragmentShader.includes('pc_fragColor');
+    const outVar = usesPCFragColor ? 'pc_fragColor' : 'gl_FragColor';
+
+    /* ============================
+      Fragment shader modifications
+      ============================ */
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `
+        #include <common>
+
+        // Screen-space dot mask in *pixel* units using gl_FragCoord.xy.
+        // fragPx: pixel coords (gl_FragCoord.xy)
+        // periodPx: spacing between dot centers (pixels)
+        // radiusPx: dot radius (pixels)
+        // angle: rotation (radians)
+        float dotMaskPx(vec2 fragPx, float periodPx, float radiusPx, float angle)
+        {
+          float c = cos(angle);
+          float s = sin(angle);
+
+          // Rotate around origin in screen space
+          vec2 r = vec2(
+            c * fragPx.x - s * fragPx.y,
+            s * fragPx.x + c * fragPx.y
+          );
+
+          // Repeating cell centered at 0 in pixel units
+          vec2 cell = fract(r / periodPx + 0.5) - 0.5;
+
+          // Pixel distance to dot center
+          float d = length(cell * periodPx);
+
+          // Anti-alias in pixel space
+          float aa = fwidth(d);
+
+          return 1.0 - smoothstep(radiusPx - aa, radiusPx + aa, d);
+        }
+      `
+    );
+
+    /* ============================
+      Final color override
+      ============================ */
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      /}\s*$/,
+      `
+        vec3 currentRGB = ${outVar}.rgb;
+
+        // Luminance of the shaded surface
+        float val = dot(currentRGB, vec3(0.2126, 0.7152, 0.0722));
+
+        // Smooth black/white classification
+        float threshold = 0.3;
+        float edge = fwidth(val);
+        float bw = smoothstep(threshold - edge, threshold + edge, val);
+        // bw = 0 -> "black region", bw = 1 -> "white region"
+
+        // Pixel coords (no stretching)
+        vec2 fragPx = gl_FragCoord.xy;
+
+        // Dot parameters in pixels
+        float periodPx = 12.0; // spacing in pixels
+        float radiusPx = 3.0;  // radius in pixels
+        float angle    = 0.0;  // rotate dot grid if desired
+
+        float dots = dotMaskPx(fragPx, periodPx, radiusPx, angle);
+
+        // Dots in the black region, solid white elsewhere
+        float colorBW = mix(dots, 1.0, bw);
+
+        ${outVar} = vec4(vec3(colorBW), ${outVar}.a);
+      }
+      `
+    );
+
+    mat.userData.shader = shader;
+  };
+
+  mat.needsUpdate = true;
+  return mat;
+}
+
+
+
+
+  let fbxRoot = null;
+  let mixer = null;
+
+  const fbxLoader = new FBXLoader();
 
   fbxLoader.load('./models/character.fbx', (fbx) => {
       fbxRoot = fbx;
@@ -156,7 +252,7 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
 
       fbxRoot.traverse((obj) => {
         if (obj.isSkinnedMesh) {
-          const m = makeRedShadowMaterial();
+          const m = makeDotShadowMaterial();
           m.skinning = true;          // important for SkinnedMesh
           obj.material = m;
           obj.castShadow = true;
