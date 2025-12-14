@@ -30,48 +30,140 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   });
 
   const floor = new THREE.Mesh(floorGeo, floorMat);
-  floor.receiveShadow = true; // doesn't affect ShaderMaterial, but fine to keep
+  floor.receiveShadow = true;
   scene.add(floor);
 
 
+function makeRedShadowMaterial() {
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 1.0,
+    metalness: 0.0
+  });
 
-  // --- FBX Animated Model ---
-  const fbxLoader = new FBXLoader();
+  mat.onBeforeCompile = (shader) => {
+    const usesPCFragColor = shader.fragmentShader.includes('pc_fragColor');
+    const outVar = usesPCFragColor ? 'pc_fragColor' : 'gl_FragColor';
 
-  // Keep these references so update() can advance animation.
-  let mixer = null;
+    // ----------------------------
+    // Vertex: pass object-space position to fragment
+    // ----------------------------
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `
+      #include <common>
+      varying vec3 vObjectPosition;
+      `
+    );
 
-  fbxLoader.load(
-    './models/Walking.fbx', // <-- change to your FBX path
-    (fbx) => {
-      // Shadows + basic traversal setup
-      fbx.traverse((obj) => {
-        if (obj.isMesh) {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+      #include <begin_vertex>
+      vObjectPosition = position;
+      `
+    );
+
+    // ----------------------------
+    // Fragment: add object-space hatch function
+    // ----------------------------
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `
+      #include <common>
+      varying vec3 vObjectPosition;
+
+      // localXZ: object-space XZ position (model-relative)
+      // period: distance between lines in object units
+      // lineWidth: thickness in [0..0.5]
+      // angle: rotation in radians in the XZ plane
+      float diagLinesMask(vec2 localXZ, float period, float lineWidth, float angle)
+      {
+          float c = cos(angle);
+          float s = sin(angle);
+
+          // Rotate in XZ plane
+          vec2 rotated = vec2(
+              c * localXZ.x - s * localXZ.y,
+              s * localXZ.x + c * localXZ.y
+          );
+
+          float u = (rotated.x + rotated.y) / period;
+          float f = fract(u);
+          float w = clamp(lineWidth, 0.0, 0.5);
+
+          return (step(f, w) + step(1.0 - w, f)) > 0.0 ? 1.0 : 0.0;
+      }
+
+      `
+    );
+
+    // ----------------------------
+    // Final override: classify to black/white and apply hatch on "black" region
+    // ----------------------------
+    shader.fragmentShader = shader.fragmentShader.replace(
+      /}\s*$/,
+      `
+        vec3 currentRGB = ${outVar}.rgb;
+
+        // Luminance classification
+        float val = dot(currentRGB, vec3(0.2126, 0.7152, 0.0722));
+
+        if (val < 0.35) {
+          // Black region => diagonal hatch (object-space)
+          float period = 4.;     // line spacing in object units
+          float lineWidth = 0.08; // thickness in [0..0.5]
+          float angle = 0.0;      // radians; adjust as needed
+
+          float mask = diagLinesMask(vObjectPosition.xy, period, lineWidth, angle);
+          ${outVar} = vec4(vec3(mask), ${outVar}.a);
+        } else {
+          // White region
+          ${outVar} = vec4(vec3(1.0), ${outVar}.a);
+        }
+
+        ${outVar} = mix(vec4(.0), vec4(1.0), ${outVar}.r); // ensure alpha=1.0
+      }
+      `
+    );
+
+    mat.userData.shader = shader;
+  };
+
+  mat.needsUpdate = true;
+  return mat;
+}
+
+
+    let fbxRoot = null;
+    let mixer = null;
+
+    const fbxLoader = new FBXLoader();
+
+  fbxLoader.load('./models/character.fbx', (fbx) => {
+      fbxRoot = fbx;
+      fbxRoot.scale.setScalar(0.015);
+      fbxRoot.position.set(0, 0, 0);
+      fbxRoot.rotation.y =  - Math.PI / 4;
+      scene.add(fbxRoot);
+
+      fbxRoot.traverse((obj) => {
+        if (obj.isSkinnedMesh) {
+          const m = makeRedShadowMaterial();
+          m.skinning = true;          // important for SkinnedMesh
+          obj.material = m;
           obj.castShadow = true;
           obj.receiveShadow = true;
         }
       });
 
-      // Typical FBX scale/position adjustments
-      fbx.scale.setScalar(0.015);
-      fbx.position.set(0, 0, 0);
-      fbx.rotation.y = - Math.PI / 4;
 
-      scene.add(fbx);
-
-      // Animation: FBXLoader usually puts clips on fbx.animations
-      if (fbx.animations && fbx.animations.length) {
-        mixer = new THREE.AnimationMixer(fbx);
-
-        // Play the first clip by default
-        const action = mixer.clipAction(fbx.animations[0]);
-        action.play();
-      }
-    },
-    (err) => {
-      console.error('FBX load error:', err);
+    if (fbx.animations?.length) {
+      mixer = new THREE.AnimationMixer(fbxRoot);
+      mixer.clipAction(fbx.animations[0]).play();
     }
-  );
+  });
+
 
 
   return {

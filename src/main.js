@@ -31,7 +31,7 @@ const hemiLight = new THREE.HemisphereLight(0xffffff, 0x202030, 0.5);
 scene.add(hemiLight);
 
 const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
-dirLight.position.set(3, 5, 2);
+dirLight.position.set(3, 8, 2);
 dirLight.castShadow = true;
 
 dirLight.shadow.mapSize.set(1024, 1024);
