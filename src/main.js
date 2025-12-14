@@ -51,12 +51,23 @@ scene.add(dirLight);
 // ----------------------
 // Helpers (visualization)
 // ----------------------
+
+const helperParams = {
+  showDirLightHelper: true,
+  showShadowFrustum: true
+};
+
 const dirLightHelper = new THREE.DirectionalLightHelper(dirLight, 1.0);
 scene.add(dirLightHelper);
 
-// Optional but highly useful: visualize the shadow frustum
 const dirLightShadowHelper = new THREE.CameraHelper(dirLight.shadow.camera);
 scene.add(dirLightShadowHelper);
+
+// initial visibility from params
+dirLightHelper.visible = helperParams.showDirLightHelper;
+dirLightShadowHelper.visible = helperParams.showShadowFrustum;
+
+
 
 // ----------------------
 // GUI: dirLight controls
@@ -121,9 +132,22 @@ dirTargetFolder
     dirLight.target.updateMatrixWorld();
   });
 
+const helpersFolder = dirFolder.addFolder('Helpers');
+
+helpersFolder
+  .add(helperParams, 'showDirLightHelper')
+  .name('DirectionalLightHelper')
+  .onChange((v) => (dirLightHelper.visible = v));
+
+helpersFolder
+  .add(helperParams, 'showShadowFrustum')
+  .name('Shadow Frustum')
+  .onChange((v) => (dirLightShadowHelper.visible = v));
+
 dirFolder.open();
 posFolder.open();
 dirTargetFolder.open();
+helpersFolder.open();
 
 // scene content
 const sceneState = setupSceneContent({

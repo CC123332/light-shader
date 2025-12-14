@@ -80,7 +80,7 @@ export const floorFragmentShader = /* glsl */ `
         float shadowAmt = (1.0 - lit);
 
         // Grid in XZ plane (since floor is horizontal)
-        float gridMask = diagLinesMask(vWorldPos.xyz, 0.1, 0.1);
+        float gridMask = diagLinesMask(vWorldPos.xyz, 0.1, 0.2);
 
         // Apply tint ONLY where both: in shadow AND on grid lines
         float tintedShadowAmt = shadowAmt * gridMask * uShadowDarkness;

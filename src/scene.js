@@ -187,7 +187,7 @@ function makeDotShadowMaterial() {
           // Anti-alias in pixel space
           float aa = fwidth(d);
 
-          return 1.0 - smoothstep(radiusPx - aa, radiusPx + aa, d);
+          return smoothstep(radiusPx - aa, radiusPx + aa, d);
         }
       `
     );
@@ -214,8 +214,8 @@ function makeDotShadowMaterial() {
         vec2 fragPx = gl_FragCoord.xy;
 
         // Dot parameters in pixels
-        float periodPx = 12.0; // spacing in pixels
-        float radiusPx = 3.0;  // radius in pixels
+        float periodPx = 10.0; // spacing in pixels
+        float radiusPx = 2.0;  // radius in pixels
         float angle    = 0.0;  // rotate dot grid if desired
 
         float dots = dotMaskPx(fragPx, periodPx, radiusPx, angle);
