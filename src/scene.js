@@ -10,7 +10,7 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   renderer.shadowMap.type = THREE.PCFShadowMap; // fine even if our custom floor does hard compare
 
   // --- Floor (custom shadow-tint shader) ---
-  const floorGeo = new THREE.PlaneGeometry(10, 10);
+  const floorGeo = new THREE.PlaneGeometry(20, 20);
   floorGeo.rotateX(-Math.PI / 2);
 
   const floorUniforms = {
@@ -34,106 +34,113 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   scene.add(floor);
 
 
-function makeRedShadowMaterial() {
-  const mat = new THREE.MeshStandardMaterial({
-    color: 0xffffff,
-    roughness: 1.0,
-    metalness: 0.0
-  });
+  function makeRedShadowMaterial() {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1.0,
+      metalness: .0
+    });
 
-  mat.onBeforeCompile = (shader) => {
-    const usesPCFragColor = shader.fragmentShader.includes('pc_fragColor');
-    const outVar = usesPCFragColor ? 'pc_fragColor' : 'gl_FragColor';
+    mat.onBeforeCompile = (shader) => {
+      const usesPCFragColor = shader.fragmentShader.includes('pc_fragColor');
+      const outVar = usesPCFragColor ? 'pc_fragColor' : 'gl_FragColor';
 
-    // ----------------------------
-    // Vertex: pass object-space position to fragment
-    // ----------------------------
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <common>',
-      `
-      #include <common>
-      varying vec3 vObjectPosition;
-      `
-    );
+      /* ============================
+        Vertex shader modifications
+        ============================ */
 
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `
-      #include <begin_vertex>
-      vObjectPosition = position;
-      `
-    );
+      // Pass object-space position to fragment shader
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <common>',
+        `
+        #include <common>
+        varying vec3 vObjectPosition;
+        `
+      );
 
-    // ----------------------------
-    // Fragment: add object-space hatch function
-    // ----------------------------
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <common>',
-      `
-      #include <common>
-      varying vec3 vObjectPosition;
+      shader.vertexShader = shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        `
+        #include <begin_vertex>
+        vObjectPosition = position;
+        `
+      );
 
-      // localXZ: object-space XZ position (model-relative)
-      // period: distance between lines in object units
-      // lineWidth: thickness in [0..0.5]
-      // angle: rotation in radians in the XZ plane
-      float diagLinesMask(vec2 localXZ, float period, float lineWidth, float angle)
-      {
-          float c = cos(angle);
-          float s = sin(angle);
+      /* ============================
+        Fragment shader modifications
+        ============================ */
 
-          // Rotate in XZ plane
-          vec2 rotated = vec2(
-              c * localXZ.x - s * localXZ.y,
-              s * localXZ.x + c * localXZ.y
-          );
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <common>',
+        `
+          #include <common>
+          varying vec3 vObjectPosition;
 
-          float u = (rotated.x + rotated.y) / period;
-          float f = fract(u);
-          float w = clamp(lineWidth, 0.0, 0.5);
+          // localXZ: object-space XZ position (model-relative)
+          // period: distance between lines in object units
+          // lineWidth: thickness in [0..0.5]
+          // angle: rotation in radians in the XZ plane
+          float diagLinesMask(vec2 localXZ, float period, float lineWidth, float angle)
+          {
+              float c = cos(angle);
+              float s = sin(angle);
 
-          return (step(f, w) + step(1.0 - w, f)) > 0.0 ? 1.0 : 0.0;
-      }
+              // Rotate in XZ plane
+              vec2 rotated = vec2(
+                  c * localXZ.x - s * localXZ.y,
+                  s * localXZ.x + c * localXZ.y
+              );
 
-      `
-    );
+              float u = (rotated.x + rotated.y) / period;
+              float f = fract(u);
+              float w = clamp(lineWidth, 0.0, 0.5);
 
-    // ----------------------------
-    // Final override: classify to black/white and apply hatch on "black" region
-    // ----------------------------
-    shader.fragmentShader = shader.fragmentShader.replace(
-      /}\s*$/,
-      `
-        vec3 currentRGB = ${outVar}.rgb;
+              return (step(f, w) + step(1.0 - w, f)) > 0.0 ? 1.0 : 0.0;
+          }
 
-        // Luminance classification
-        float val = dot(currentRGB, vec3(0.2126, 0.7152, 0.0722));
+        `
+      );
 
-        if (val < 0.35) {
-          // Black region => diagonal hatch (object-space)
-          float period = 4.;     // line spacing in object units
-          float lineWidth = 0.08; // thickness in [0..0.5]
-          float angle = 0.0;      // radians; adjust as needed
+      /* ============================
+        Final color override
+        ============================ */
 
-          float mask = diagLinesMask(vObjectPosition.xy, period, lineWidth, angle);
-          ${outVar} = vec4(vec3(mask), ${outVar}.a);
-        } else {
-          // White region
-          ${outVar} = vec4(vec3(1.0), ${outVar}.a);
+      shader.fragmentShader = shader.fragmentShader.replace(
+        /}\s*$/,
+        `
+          vec3 currentRGB = ${outVar}.rgb;
+
+          // Luminance of the shaded surface
+          float val = dot(currentRGB, vec3(0.2126, 0.7152, 0.0722));
+
+          // Smooth black/white classification
+          float threshold = 0.3;
+          float edge = fwidth(val);
+          float bw = smoothstep(threshold - edge, threshold + edge, val);
+          // bw = 0 -> black region, bw = 1 -> white region
+
+          // Hatch parameters
+          float period = 4.0;
+          float lineWidth = 0.08;
+          float angle = 0.0;
+
+          // Anti-aliased hatch (object-space XY)
+          float hatch = diagLinesMask(vObjectPosition.xy, period, lineWidth, angle);
+
+          // Blend hatch into black region, solid white elsewhere
+          float colorBW = mix(hatch, 1.0, bw);
+
+          ${outVar} = vec4(vec3(colorBW), ${outVar}.a);
         }
+        `
+      );
 
-        ${outVar} = mix(vec4(.0), vec4(1.0), ${outVar}.r); // ensure alpha=1.0
-      }
-      `
-    );
+      mat.userData.shader = shader;
+    };
 
-    mat.userData.shader = shader;
-  };
-
-  mat.needsUpdate = true;
-  return mat;
-}
-
+    mat.needsUpdate = true;
+    return mat;
+  }
 
     let fbxRoot = null;
     let mixer = null;
@@ -142,7 +149,7 @@ function makeRedShadowMaterial() {
 
   fbxLoader.load('./models/character.fbx', (fbx) => {
       fbxRoot = fbx;
-      fbxRoot.scale.setScalar(0.015);
+      fbxRoot.scale.setScalar(0.03);
       fbxRoot.position.set(0, 0, 0);
       fbxRoot.rotation.y =  - Math.PI / 4;
       scene.add(fbxRoot);
