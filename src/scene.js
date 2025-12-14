@@ -1,4 +1,6 @@
-import * as THREE from 'https://unpkg.com/three@0.165.0/build/three.module.js';
+import * as THREE from 'three';
+import { FBXLoader } from 'three/examples/jsm/loaders/FBXLoader.js';
+
 import { lightingVertexShader, lightingFragmentShader } from './shaders/lighting.js';
 import { floorVertexShader, floorFragmentShader } from './shaders/floorShadowTint.js';
 
@@ -6,34 +8,6 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   // Ensure shadow mapping is enabled
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap; // fine even if our custom floor does hard compare
-
-  // --- Sphere (your existing shader material) ---
-  const sphereGeo = new THREE.SphereGeometry(0.7, 4, 4);
-
-  const lightDir = lights?.dirLight
-    ? lights.dirLight.position.clone().normalize()
-    : new THREE.Vector3(1, 1, 1).normalize();
-
-  const uniforms = {
-    uTime: { value: 0.0 },
-    uLightDir: { value: lightDir },
-    uLightViewProj: { value: new THREE.Matrix4() }, // keep your existing pipeline if needed
-    uCameraPos: { value: camera.position },
-    uAlbedo: { value: new THREE.Color(0x88b4ff) },
-    uMetallic: { value: 0.6 },
-    uRoughness: { value: 0.3 }
-  };
-
-  const sphereMat = new THREE.ShaderMaterial({
-    uniforms,
-    vertexShader: lightingVertexShader,
-    fragmentShader: lightingFragmentShader
-  });
-
-  const sphere = new THREE.Mesh(sphereGeo, sphereMat);
-  sphere.position.y = 0.8;
-  sphere.castShadow = true;
-  scene.add(sphere);
 
   // --- Floor (custom shadow-tint shader) ---
   const floorGeo = new THREE.PlaneGeometry(10, 10);
@@ -46,11 +20,7 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
     uShadowDarkness: { value: 0.75 },
 
     uFloorColor: { value: new THREE.Color(0x88b4ff) },
-    uShadowTint: { value: new THREE.Color(0xFF0000) }, // pick any tint color you want
-
-    uGridScale:   { value: 20. },   // try 1.0, 2.0, 5.0
-    uLineWidth:   { value: 0.2 },  // <= 0.5; typical 0.03–0.12
-    uGridFeather: { value: 0.01 }   // small soften amount
+    uShadowTint: { value: new THREE.Color(0xFF0000) }
   };
 
   const floorMat = new THREE.ShaderMaterial({
@@ -63,11 +33,49 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
   floor.receiveShadow = true; // doesn't affect ShaderMaterial, but fine to keep
   scene.add(floor);
 
+
+
+  // --- FBX Animated Model ---
+  const fbxLoader = new FBXLoader();
+
+  // Keep these references so update() can advance animation.
+  let mixer = null;
+
+  fbxLoader.load(
+    './models/Walking.fbx', // <-- change to your FBX path
+    (fbx) => {
+      // Shadows + basic traversal setup
+      fbx.traverse((obj) => {
+        if (obj.isMesh) {
+          obj.castShadow = true;
+          obj.receiveShadow = true;
+        }
+      });
+
+      // Typical FBX scale/position adjustments
+      fbx.scale.setScalar(0.015);
+      fbx.position.set(0, 0, 0);
+      fbx.rotation.y = - Math.PI / 4;
+
+      scene.add(fbx);
+
+      // Animation: FBXLoader usually puts clips on fbx.animations
+      if (fbx.animations && fbx.animations.length) {
+        mixer = new THREE.AnimationMixer(fbx);
+
+        // Play the first clip by default
+        const action = mixer.clipAction(fbx.animations[0]);
+        action.play();
+      }
+    },
+    (err) => {
+      console.error('FBX load error:', err);
+    }
+  );
+
+
   return {
     update(dt, elapsed) {
-      uniforms.uTime.value = elapsed;
-      sphere.rotation.y += dt * 0.3;
-
       const dirLight = lights.dirLight;
 
       // Keep shadow matrix current (includes bias transform)
@@ -77,6 +85,8 @@ export function setupSceneContent({ scene, camera, renderer, lights }) {
       if (dirLight.shadow.map && dirLight.shadow.map.texture) {
         floorUniforms.uShadowMap.value = dirLight.shadow.map.texture;
       }
+
+      if (mixer) mixer.update(dt);
     }
   };
 }
