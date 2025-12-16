@@ -25,7 +25,9 @@ const camera = new THREE.PerspectiveCamera(
   0.1,
   100
 );
-camera.position.set(0, 3, 8);
+camera.position.set(-2, 4, 6);
+const CAMERA_TARGET = new THREE.Vector3(-2, 3, 0);
+camera.lookAt(CAMERA_TARGET);
 scene.add(camera);
 
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0x202030, 0.5);
@@ -66,7 +68,6 @@ scene.add(dirLightShadowHelper);
 // initial visibility from params
 dirLightHelper.visible = helperParams.showDirLightHelper;
 dirLightShadowHelper.visible = helperParams.showShadowFrustum;
-
 
 
 // ----------------------
@@ -144,10 +145,51 @@ helpersFolder
   .name('Shadow Frustum')
   .onChange((v) => (dirLightShadowHelper.visible = v));
 
-dirFolder.open();
-posFolder.open();
-dirTargetFolder.open();
-helpersFolder.open();
+const camParams = {
+  posX: camera.position.x,
+  posY: camera.position.y,
+  posZ: camera.position.z,
+  fov: camera.fov
+};
+
+// ----------------------
+// GUI: Camera controls
+// ----------------------
+const camFolder = gui.addFolder('Camera');
+
+const camPosFolder = camFolder.addFolder('Position');
+
+camPosFolder
+  .add(camParams, 'posX', -50, 50, 0.01)
+  .name('X')
+  .onChange((v) => (camera.position.x = v));
+
+camPosFolder
+  .add(camParams, 'posY', -50, 50, 0.01)
+  .name('Y')
+  .onChange((v) => (camera.position.y = v));
+
+camPosFolder
+  .add(camParams, 'posZ', -50, 50, 0.01)
+  .name('Z')
+  .onChange((v) => (camera.position.z = v));
+
+camFolder
+  .add(camParams, 'fov', 20, 100, 0.1)
+  .name('FOV')
+  .onChange((v) => {
+    camera.fov = v;
+    camera.updateProjectionMatrix();
+  });
+
+
+dirFolder.close();
+posFolder.close();
+dirTargetFolder.close();
+camFolder.close();
+camPosFolder.close();
+helpersFolder.close();
+
 
 // scene content
 const sceneState = setupSceneContent({
